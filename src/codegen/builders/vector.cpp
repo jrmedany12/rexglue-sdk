@@ -626,6 +626,22 @@ bool build_vcmpgtuh(BuilderContext& ctx) {
   return true;
 }
 
+bool build_vcmpgtuw(BuilderContext& ctx) {
+  ctx.println(
+      "\tsimde_mm_store_si128((simde__m128i*){}.u32, "
+      "simde_mm_cmpgt_epi32(simde_mm_xor_si128(simde_mm_load_si128((simde__m128i*){}.u32), "
+      "simde_mm_set1_epi32((int32_t)0x80000000)), "
+      "simde_mm_xor_si128(simde_mm_load_si128((simde__m128i*){}.u32), "
+      "simde_mm_set1_epi32((int32_t)0x80000000))));",
+      ctx.v(ctx.insn.operands[0]), ctx.v(ctx.insn.operands[1]), ctx.v(ctx.insn.operands[2]));
+
+  if (isRecordForm(ctx.insn))
+    ctx.println(
+        "\t{}.setFromMask(simde_mm_castsi128_ps(simde_mm_load_si128((simde__m128i*){}.u32)), 0xF);",
+        ctx.cr(6), ctx.v(ctx.insn.operands[0]));
+  return true;
+}
+
 bool build_vcmpgtsh(BuilderContext& ctx) {
   ctx.println(
       "\tsimde_mm_store_si128((simde__m128i*){}.u8, "

@@ -33,6 +33,13 @@ REXCVAR_DEFINE_INT32(window_height, 0, "UI/Window",
 
 REXCVAR_DEFINE_BOOL(fullscreen, false, "UI/Window", "Start the window in fullscreen mode")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
+REXCVAR_DEFINE_INT32(monitor, 0, "UI/Window",
+                     "Monitor index to display on (0 = default, 1 = primary, 2 = "
+                     "second monitor, etc.)")
+    .range(0, 16)
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
 namespace rex {
 namespace ui {
 

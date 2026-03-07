@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <rex/assert.h>
 #include <rex/cvar.h>
@@ -71,6 +72,24 @@ uint32_t ResolveWindowHeight(uint32_t requested_height) {
     }
   }
   return requested_height;
+}
+
+BOOL CALLBACK EnumMonitorsCallback(HMONITOR monitor, HDC, LPRECT, LPARAM data) {
+  auto* monitors = reinterpret_cast<std::vector<HMONITOR>*>(data);
+  monitors->push_back(monitor);
+  return TRUE;
+}
+
+HMONITOR GetMonitorByIndex(int32_t index) {
+  if (index <= 0) {
+    return nullptr;
+  }
+  std::vector<HMONITOR> monitors;
+  EnumDisplayMonitors(nullptr, nullptr, EnumMonitorsCallback, reinterpret_cast<LPARAM>(&monitors));
+  if (index <= static_cast<int32_t>(monitors.size())) {
+    return monitors[index - 1];
+  }
+  return nullptr;
 }
 
 }  // namespace
@@ -261,6 +280,25 @@ bool Win32Window::OpenImpl() {
   if (icon_) {
     SendMessageW(hwnd_, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(icon_));
     SendMessageW(hwnd_, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(icon_));
+  }
+
+  // Move the window to the requested monitor before entering fullscreen so
+  // that MonitorFromWindow picks the correct display.
+  if (int32_t monitor_index = REXCVAR_GET(monitor); monitor_index > 0) {
+    HMONITOR target = GetMonitorByIndex(monitor_index);
+    if (target) {
+      MONITORINFO mi;
+      mi.cbSize = sizeof(mi);
+      if (GetMonitorInfo(target, &mi)) {
+        RECT wr;
+        GetWindowRect(hwnd_, &wr);
+        int w = wr.right - wr.left;
+        int h = wr.bottom - wr.top;
+        int x = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2;
+        int y = mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - h) / 2;
+        SetWindowPos(hwnd_, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+      }
+    }
   }
 
   if (IsFullscreen()) {

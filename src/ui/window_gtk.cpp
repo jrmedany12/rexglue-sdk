@@ -378,6 +378,19 @@ bool GTKWindow::OpenImpl() {
   // it impossible to make the window smaller.
   gtk_widget_set_size_request(drawing_area_, -1, -1);
 
+  // Move the window to the requested monitor before entering fullscreen.
+  if (int32_t monitor_index = REXCVAR_GET(monitor); monitor_index > 0) {
+    GdkDisplay* display = gtk_widget_get_display(window_);
+    GdkScreen* screen = gdk_display_get_default_screen(display);
+    int n_monitors = gdk_screen_get_n_monitors(screen);
+    if (monitor_index <= n_monitors) {
+      GdkRectangle geom;
+      gdk_screen_get_monitor_geometry(screen, monitor_index - 1, &geom);
+      gtk_window_move(GTK_WINDOW(window_), geom.x + (geom.width - GetDesiredLogicalWidth()) / 2,
+                      geom.y + (geom.height - GetDesiredLogicalHeight()) / 2);
+    }
+  }
+
   // After setting up the initial layout for non-fullscreen, enter fullscreen if
   // requested.
   if (IsFullscreen()) {

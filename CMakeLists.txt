@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(ReXGlue
-    VERSION 0.3.0.2000
+    VERSION 0.3.2
     LANGUAGES C CXX
     DESCRIPTION "Xbox 360 Recompilation SDK"
 )

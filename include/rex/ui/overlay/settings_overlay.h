@@ -11,6 +11,7 @@
  */
 #pragma once
 #include <filesystem>
+#include <string>
 #include <rex/ui/imgui_dialog.h>
 
 namespace rex::ui {
@@ -31,7 +32,8 @@ class SettingsDialog : public ImGuiDialog {
   bool visible_ = false;
   std::filesystem::path config_path_;
   char search_buf_[128] = {};
-  int selected_category_ = 0;
+  std::string selected_category_;
+  std::string capturing_bind_name_;
 };
 
 }  // namespace rex::ui

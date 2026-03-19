@@ -591,21 +591,21 @@ T GuestToHostFunction(const TFunction& func, TArgs&&... argv) {
 
 // Create a simple stub that does nothing
 #define PPC_STUB(subroutine)              \
-  extern "C" PPC_FUNC(subroutine) {       \
+  extern "C" PPC_WEAK_FUNC(subroutine) {  \
     (void)base;                           \
     REXKRNL_WARN("{} STUB", #subroutine); \
   }
 
 // Create a stub that logs a message when called
 #define PPC_STUB_LOG(subroutine, msg)               \
-  extern "C" PPC_FUNC(subroutine) {                 \
+  extern "C" PPC_WEAK_FUNC(subroutine) {            \
     (void)base;                                     \
     REXKRNL_WARN("{} STUB - {}", #subroutine, msg); \
   }
 
 // Create a stub that returns a specific value
 #define PPC_STUB_RETURN(subroutine, value)                                                \
-  extern "C" PPC_FUNC(subroutine) {                                                       \
+  extern "C" PPC_WEAK_FUNC(subroutine) {                                                  \
     (void)base;                                                                           \
     REXKRNL_WARN("{} STUB - returning {:#x}", #subroutine, static_cast<uint32_t>(value)); \
     ctx.r3.u64 = (value);                                                                 \

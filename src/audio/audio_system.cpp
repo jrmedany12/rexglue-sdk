@@ -42,8 +42,10 @@ REXCVAR_DEFINE_INT32(
 
 namespace rex::audio {
 
-AudioSystem::AudioSystem(runtime::Processor* processor)
-    : memory_(processor->memory()), processor_(processor), worker_running_(false) {
+AudioSystem::AudioSystem(runtime::FunctionDispatcher* function_dispatcher)
+    : memory_(function_dispatcher->memory()),
+      function_dispatcher_(function_dispatcher),
+      worker_running_(false) {
   std::memset(clients_, 0, sizeof(clients_));
 
   queued_frames_ = std::min(
@@ -59,7 +61,7 @@ AudioSystem::AudioSystem(runtime::Processor* processor)
   assert_not_null(shutdown_event_);
   wait_handles_[kMaximumClientCount] = shutdown_event_.get();
 
-  xma_decoder_ = std::make_unique<rex::audio::XmaDecoder>(processor_);
+  xma_decoder_ = std::make_unique<rex::audio::XmaDecoder>(function_dispatcher_);
 
   resume_event_ = rex::thread::Event::CreateAutoResetEvent(false);
   assert_not_null(resume_event_);
@@ -140,8 +142,8 @@ void AudioSystem::WorkerThreadMain() {
         }
         SCOPE_profile_cpu_i("apu", "rex::audio::AudioSystem->client_callback");
         uint64_t args[] = {client_callback_arg};
-        processor_->Execute(worker_thread_->thread_state(), client_callback, args,
-                            rex::countof(args));
+        function_dispatcher_->Execute(worker_thread_->thread_state(), client_callback, args,
+                                      rex::countof(args));
         if (diag_pump_count < 10) {
           REXAPU_DEBUG("AudioWorker: callback returned for client {}", index);
         }

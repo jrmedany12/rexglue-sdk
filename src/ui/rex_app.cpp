@@ -104,6 +104,13 @@ bool ReXApp::OnInitialize() {
   log_sink_ = std::make_shared<rex::LogCaptureSink>();
   rex::AddSink(log_sink_);
 
+  // Load saved config (CVARs) before anything reads them
+  auto config_path = exe_dir / (std::string(GetName()) + ".toml");
+  if (std::filesystem::exists(config_path)) {
+    rex::cvar::LoadConfig(config_path);
+    REXLOG_INFO("Loaded config: {}", config_path.filename().string());
+  }
+
   REXLOG_INFO("{} starting", GetName());
   REXLOG_INFO("  Game directory: {}", game_data_root_.string());
   if (!user_data_root_.empty()) {
@@ -138,8 +145,13 @@ bool ReXApp::OnInitialize() {
     return false;
   }
 
+  std::string xex_image = "game:\\default.xex";
+
+  // Allow subclass to override xex image
+  OnLoadXexImage(xex_image);
+
   // Load XEX image
-  status = runtime_->LoadXexImage("game:\\default.xex");
+  status = runtime_->LoadXexImage(xex_image);
   if (XFAILED(status)) {
     REXLOG_ERROR("Failed to load XEX: {:08X}", status);
     return false;
@@ -168,6 +180,12 @@ bool ReXApp::OnInitialize() {
 
   window_->AddListener(this);
   window_->AddInputListener(this, 0);
+
+  // Attach window to input system so deferred drivers (e.g. MnK) can register
+  if (runtime_ && runtime_->input_system()) {
+    static_cast<rex::input::InputSystem*>(runtime_->input_system())->AttachWindow(window_.get());
+  }
+
   if (REXCVAR_GET(fullscreen)) {
     window_->SetFullscreen(true);
   }
@@ -195,6 +213,13 @@ bool ReXApp::OnInitialize() {
 
         runtime_->set_display_window(window_.get());
         runtime_->set_imgui_drawer(imgui_drawer_.get());
+
+        // Tell input drivers to suppress input when ImGui wants the mouse
+        // (e.g. overlay is open). This controls MnK mouse capture.
+        auto* input_sys = static_cast<rex::input::InputSystem*>(runtime_->input_system());
+        if (input_sys) {
+          input_sys->SetActiveCallback([]() { return !ImGui::GetIO().WantCaptureMouse; });
+        }
       }
     }
     window_->SetPresenter(presenter);

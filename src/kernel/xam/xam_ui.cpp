@@ -463,12 +463,27 @@ ppc_u32_result_t XamShowKeyboardUI_entry(ppc_u32_t user_index, ppc_u32_t flags,
     };
     const Runtime* emulator = kernel_state()->emulator();
     ui::ImGuiDrawer* imgui_drawer = emulator->imgui_drawer();
+
+    // Read and convert title/description/default_text from guest memory as utf16 to utf8 strings
+    std::string title_str =
+        title ? rex::string::to_utf8(rex::memory::load_and_swap<std::u16string>(
+                    kernel_state()->memory()->TranslateVirtual(title.guest_address())))
+              : "";
+    std::string desc_str =
+        description ? rex::string::to_utf8(rex::memory::load_and_swap<std::u16string>(
+                          kernel_state()->memory()->TranslateVirtual(description.guest_address())))
+                    : "";
+    std::string def_text_str =
+        default_text
+            ? rex::string::to_utf8(rex::memory::load_and_swap<std::u16string>(
+                  kernel_state()->memory()->TranslateVirtual(default_text.guest_address())))
+            : "";
+
     if (imgui_drawer) {
+      uint32_t buffer_length_safe = buffer_length + 1;  // +1 for null terminator, just in case
       result = xeXamDispatchDialogEx<KeyboardInputDialog>(
-          new KeyboardInputDialog(imgui_drawer, title ? rex::string::to_utf8(title.value()) : "",
-                                  description ? rex::string::to_utf8(description.value()) : "",
-                                  default_text ? rex::string::to_utf8(default_text.value()) : "",
-                                  buffer_length),
+          new KeyboardInputDialog(imgui_drawer, title_str, desc_str, def_text_str,
+                                  buffer_length_safe),
           close, overlapped.guest_address());
     } else {
       // Fallback to headless

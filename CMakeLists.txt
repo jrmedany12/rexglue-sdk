@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(ReXGlue
-    VERSION 0.4.2
+    VERSION 0.5.0
     LANGUAGES C CXX
     DESCRIPTION "Xbox 360 Recompilation SDK"
 )
@@ -18,7 +18,7 @@ configure_file(
 #==========================================================
 # Build Options
 #==========================================================
-option(REXGLUE_BUILD_TESTS       "Build PPC instruction and unit tests" ON)
+option(REXGLUE_BUILD_TESTS       "Build PPC instruction and unit tests" OFF)
 option(REXGLUE_ENABLE_SANITIZERS "Enable UndefinedBehaviorSanitizer" OFF)
 option(REXGLUE_ENABLE_FIDELITYFX "Enable optional AMD FidelityFX integration (experimental)" ON)
 

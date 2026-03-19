@@ -25,7 +25,7 @@
 #include <rex/kernel/xboxkrnl/threading.h>
 #include <rex/system/kernel_module.h>
 #include <rex/system/kernel_state.h>
-#include <rex/system/processor.h>
+#include <rex/system/function_dispatcher.h>
 #include <rex/system/user_module.h>
 #include <rex/system/xevent.h>
 #include <rex/system/xmodule.h>
@@ -51,7 +51,7 @@ KernelState::KernelState(Runtime* emulator)
       memory_(emulator->memory()),
       dispatch_thread_running_(false),
       dpc_list_(emulator->memory()) {
-  processor_ = emulator->processor();
+  function_dispatcher_ = emulator->function_dispatcher();
   file_system_ = emulator->file_system();
 
   app_manager_ = std::make_unique<xam::AppManager>();
@@ -472,7 +472,7 @@ object_ref<XThread> KernelState::LaunchModule(object_ref<UserModule> module) {
   }
 
   // TODO(tomc): do we need this for rexglue? more of a nice utility than a requirement like in JIT.
-  // emulator()->processor()->PreLaunch();
+  // emulator()->function_dispatcher()->PreLaunch();
 
   // Resume the thread now.
   // If the debugger has requested a suspend this will just decrement the
@@ -530,7 +530,7 @@ void KernelState::SetExecutableModule(object_ref<UserModule> module) {
   }
 
   // Setup the kernel's XexExecutableModuleHandle field.
-  auto export_entry = emulator_->processor()->export_resolver()->GetExportByOrdinal(
+  auto export_entry = emulator_->function_dispatcher()->export_resolver()->GetExportByOrdinal(
       "xboxkrnl.exe", 0x0193 /* XexExecutableModuleHandle */);
   if (export_entry) {
     assert_not_zero(export_entry->variable_ptr);
@@ -539,7 +539,7 @@ void KernelState::SetExecutableModule(object_ref<UserModule> module) {
   }
 
   // Setup the kernel's ExLoadedImageName field
-  export_entry = emulator_->processor()->export_resolver()->GetExportByOrdinal(
+  export_entry = emulator_->function_dispatcher()->export_resolver()->GetExportByOrdinal(
       "xboxkrnl.exe", 0x01AF /* ExLoadedImageName */);
   if (export_entry) {
     char* variable_ptr = memory_->TranslateVirtual<char*>(export_entry->variable_ptr);
@@ -668,7 +668,7 @@ void KernelState::TerminateTitle() {
   if (from_guest_thread) {
     for (auto routine : terminate_notifications_) {
       auto thread_state = XThread::GetCurrentThread()->thread_state();
-      processor()->Execute(thread_state, routine.guest_routine);
+      function_dispatcher()->Execute(thread_state, routine.guest_routine, nullptr, 0);
     }
   }
   terminate_notifications_.clear();
@@ -685,7 +685,7 @@ void KernelState::TerminateTitle() {
         thread->thread()->Suspend();
 
         global_lock.unlock();
-        // NOTE(tomc): processor_->StepToGuestSafePoint() is JIT-only
+        // NOTE(tomc): function_dispatcher_->StepToGuestSafePoint() is JIT-only
         thread->Terminate(0);
         global_lock.lock();
       }
@@ -753,8 +753,8 @@ void KernelState::OnThreadExecute(XThread* thread) {
   assert_true(XThread::GetCurrentThread() == thread);
 
   // TODO(tomc): Do we need this?
-  //             Xenia would iterate user_modules_ and call processor()->Execute() for each
-  //             Note that this would require reimplementation of guest thread management
+  //             Xenia would iterate user_modules_ and call function_dispatcher()->Execute() for
+  //             each Note that this would require reimplementation of guest thread management
   (void)thread;
 }
 

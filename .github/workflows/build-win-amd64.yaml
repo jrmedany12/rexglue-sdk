@@ -21,6 +21,9 @@ jobs:
       - name: Configure (CMake preset)
         run: cmake --preset win-amd64
 
+      - name: Fix UTF16 file from FidelityFX
+        run: powershell "Get-Content 'thirdparty/FidelityFX/ffx-api/src/resource/ffx_api_dll.rc' | Out-File 'thirdparty/FidelityFX/ffx-api/src/resource/ffx_api_dll.rc' -Encoding ascii"
+
       - name: Make Install
         run: cmake --build out/build/win-amd64 --target install -j20
       - name: Package

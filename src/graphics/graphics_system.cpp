@@ -77,10 +77,11 @@ GraphicsSystem::GraphicsSystem() : vsync_worker_running_(false) {}
 
 GraphicsSystem::~GraphicsSystem() = default;
 
-X_STATUS GraphicsSystem::Setup(runtime::Processor* processor, system::KernelState* kernel_state,
+X_STATUS GraphicsSystem::Setup(runtime::FunctionDispatcher* function_dispatcher,
+                               system::KernelState* kernel_state,
                                ui::WindowedAppContext* app_context, bool with_presentation) {
-  memory_ = processor->memory();
-  processor_ = processor;
+  memory_ = function_dispatcher->memory();
+  function_dispatcher_ = function_dispatcher;
   kernel_state_ = kernel_state;
   app_context_ = app_context;
 
@@ -293,8 +294,8 @@ void GraphicsSystem::DispatchInterruptCallback(uint32_t source, uint32_t cpu) {
   //          interrupt_callback_, source, cpu);
 
   uint64_t args[] = {source, interrupt_callback_data_};
-  processor_->ExecuteInterrupt(thread->thread_state(), interrupt_callback_, args,
-                               rex::countof(args));
+  function_dispatcher_->ExecuteInterrupt(thread->thread_state(), interrupt_callback_, args,
+                                         rex::countof(args));
 }
 
 void GraphicsSystem::MarkVblank() {

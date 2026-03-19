@@ -211,7 +211,7 @@ bool CodegenWriter::write(bool force) {
       println("PPC_EXTERN_IMPORT({});", node->name());
     }
 
-    println("\n// Function mapping table - iterate to register functions with processor");
+    println("\n// Function mapping table - iterate to register functions with FunctionDispatcher");
 
     SaveCurrentOutData(fmt::format("{}_init.h", projectName));
   }

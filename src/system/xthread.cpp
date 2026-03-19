@@ -26,7 +26,7 @@
 #include <rex/runtime.h>
 #include <rex/stream.h>
 #include <rex/system/kernel_state.h>
-#include <rex/system/processor.h>
+#include <rex/system/function_dispatcher.h>
 #include <rex/system/thread_state.h>
 #include <rex/system/user_module.h>
 #include <rex/kernel/xboxkrnl/threading.h>
@@ -576,17 +576,17 @@ void XThread::Execute() {
 
   // NOTE(tomc): JIT execution replaced with direct function calls
   // In rexglue, guest code is compiled ahead of time and called directly.
-  // The start_address points to a 32bit guest address, for which the processor
-  // maintains a lookup table for to retrieve the host function pointer.
+  // The start_address points to a 32bit guest address, for which the function
+  // dispatcher maintains a lookup table to retrieve the host function pointer.
   auto* runtime = Runtime::instance();
-  if (!runtime || !runtime->processor()) {
+  if (!runtime || !runtime->function_dispatcher()) {
     REXSYS_ERROR("XThread::Execute - Runtime not initialized");
     return;
   }
 
-  auto* processor = runtime->processor();
+  auto* dispatcher = runtime->function_dispatcher();
   auto* memory = runtime->memory();
-  PPCFunc* func = processor->GetFunction(address);
+  PPCFunc* func = dispatcher->GetFunction(address);
   if (!func) {
     REXSYS_ERROR("XThread::Execute - No function registered at {:08X}", address);
     return;
@@ -700,7 +700,7 @@ void XThread::DeliverAPCs() {
   auto mem = memory();
   auto* ctx = thread_state_->context();
   auto kthread = guest_object<X_KTHREAD>();
-  auto* processor = kernel_state()->processor();
+  auto* dispatcher = kernel_state()->function_dispatcher();
 
   auto old_irql = kernel::xboxkrnl::xeKeKfAcquireSpinLock(ctx, &kthread->apc_lock);
   auto& user_apc_queue = kthread->apc_lists[1];
@@ -722,11 +722,11 @@ void XThread::DeliverAPCs() {
     memory::store_and_swap<uint32_t>(scratch_ptr + 12, apc->arg2);
 
     if (apc->kernel_routine != XAPC::kDummyKernelRoutine) {
-      if (processor->GetFunction(apc->kernel_routine)) {
+      if (dispatcher->GetFunction(apc->kernel_routine)) {
         uint64_t kernel_args[] = {apc_ptr, scratch_address_ + 0, scratch_address_ + 4,
                                   scratch_address_ + 8, scratch_address_ + 12};
-        processor->Execute(thread_state_.get(), apc->kernel_routine, kernel_args,
-                           rex::countof(kernel_args));
+        dispatcher->Execute(thread_state_.get(), apc->kernel_routine, kernel_args,
+                            rex::countof(kernel_args));
       } else {
         REXSYS_ERROR("DeliverAPCs: kernel_routine {:08X} not found", uint32_t(apc->kernel_routine));
       }
@@ -741,10 +741,10 @@ void XThread::DeliverAPCs() {
     uint32_t arg2 = memory::load_and_swap<uint32_t>(scratch_ptr + 12);
 
     if (normal_routine) {
-      if (processor->GetFunction(normal_routine)) {
+      if (dispatcher->GetFunction(normal_routine)) {
         uint64_t normal_args[] = {normal_context, arg1, arg2};
-        processor->Execute(thread_state_.get(), normal_routine, normal_args,
-                           rex::countof(normal_args));
+        dispatcher->Execute(thread_state_.get(), normal_routine, normal_args,
+                            rex::countof(normal_args));
       } else {
         REXSYS_ERROR("DeliverAPCs: normal_routine {:08X} not found", normal_routine);
       }
@@ -787,7 +787,7 @@ void XThread::RundownAPCs() {
       if (apc->rundown_routine == XAPC::kDummyRundownRoutine) {
         // No-op.
       } else if (apc->rundown_routine) {
-        auto fn = kernel_state()->processor()->GetFunction(apc->rundown_routine);
+        auto fn = kernel_state()->function_dispatcher()->GetFunction(apc->rundown_routine);
         if (fn) {
           auto* ctx = thread_state_->context();
           ctx->r3.u64 = apc_ptr;

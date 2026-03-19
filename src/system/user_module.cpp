@@ -16,8 +16,8 @@
 #include <rex/runtime.h>
 #include <rex/stream.h>
 #include <rex/system/elf_module.h>
+#include <rex/system/function_dispatcher.h>
 #include <rex/system/kernel_state.h>
-#include <rex/system/processor.h>
 #include <rex/system/user_module.h>
 #include <rex/system/xex_module.h>
 #include <rex/system/xfile.h>
@@ -134,7 +134,7 @@ X_STATUS UserModule::LoadFromFile(const std::string_view path) {
 }
 
 X_STATUS UserModule::LoadFromMemory(const void* addr, const size_t length) {
-  auto processor = kernel_state()->processor();
+  auto* dispatcher = kernel_state()->function_dispatcher();
 
   // Detect format by magic bytes
   be<memory::fourcc_t> magic;
@@ -151,7 +151,7 @@ X_STATUS UserModule::LoadFromMemory(const void* addr, const size_t length) {
 
   if (module_format_ == kModuleFormatXex) {
     // Create XexModule to parse and load the XEX image into guest memory
-    auto xex_module = new runtime::XexModule(processor, kernel_state());
+    auto xex_module = new runtime::XexModule(dispatcher, kernel_state());
     if (!xex_module->Load(name_, path_, addr, length)) {
       delete xex_module;
       return X_STATUS_UNSUCCESSFUL;
@@ -164,7 +164,7 @@ X_STATUS UserModule::LoadFromMemory(const void* addr, const size_t length) {
 
   } else if (module_format_ == kModuleFormatElf) {
     // Create ElfModule to parse and load the ELF image into guest memory
-    auto elf_module = new runtime::ElfModule(processor, kernel_state());
+    auto elf_module = new runtime::ElfModule(dispatcher, kernel_state());
     if (!elf_module->Load(name_, path_, addr, length)) {
       delete elf_module;
       return X_STATUS_UNSUCCESSFUL;

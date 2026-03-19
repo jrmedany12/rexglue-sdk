@@ -20,7 +20,7 @@
 #include <rex/runtime.h>
 #include <rex/system/export_resolver.h>
 #include <rex/system/kernel_state.h>
-#include <rex/system/processor.h>
+#include <rex/system/function_dispatcher.h>
 #include <rex/system/user_module.h>
 #include <rex/system/xmemory.h>
 #include <rex/system/xthread.h>
@@ -72,8 +72,9 @@ X_STATUS Runtime::Setup(RuntimeConfig config) {
 
   export_resolver_ = std::make_unique<runtime::ExportResolver>();
 
-  processor_ = std::make_unique<runtime::Processor>(memory_.get(), export_resolver_.get());
-  REXSYS_INFO("Processor initialized");
+  function_dispatcher_ =
+      std::make_unique<runtime::FunctionDispatcher>(memory_.get(), export_resolver_.get());
+  REXSYS_INFO("FunctionDispatcher initialized");
 
   // Create virtual file system
   file_system_ = std::make_unique<rex::filesystem::VirtualFileSystem>();
@@ -103,7 +104,7 @@ X_STATUS Runtime::Setup(RuntimeConfig config) {
 
   // Initialize the APU (Audio Processing Unit) from injected config
   if (config.audio_factory) {
-    audio_system_ = config.audio_factory(processor_.get());
+    audio_system_ = config.audio_factory(function_dispatcher_.get());
     if (audio_system_) {
       X_STATUS audio_status = audio_system_->Setup(kernel_state_.get());
       if (XFAILED(audio_status)) {
@@ -132,7 +133,7 @@ X_STATUS Runtime::Setup(RuntimeConfig config) {
   if (config.graphics) {
     graphics_system_ = std::move(config.graphics);
     bool with_presentation = (app_context_ != nullptr);
-    X_STATUS gpu_status = graphics_system_->Setup(processor_.get(), kernel_state_.get(),
+    X_STATUS gpu_status = graphics_system_->Setup(function_dispatcher_.get(), kernel_state_.get(),
                                                   app_context_, with_presentation);
     if (XFAILED(gpu_status)) {
       REXSYS_ERROR("Failed to initialize GPU - required for runtime");
@@ -161,8 +162,9 @@ X_STATUS Runtime::Setup(uint32_t code_base, uint32_t code_size, uint32_t image_b
     return status;
   }
 
-  // Initialize function table in Processor for recompiled code dispatch
-  if (!processor_->InitializeFunctionTable(code_base, code_size, image_base, image_size)) {
+  // Initialize function table in FunctionDispatcher for recompiled code dispatch
+  if (!function_dispatcher_->InitializeFunctionTable(code_base, code_size, image_base,
+                                                     image_size)) {
     REXSYS_ERROR("Failed to initialize function table");
     return X_STATUS_UNSUCCESSFUL;
   }
@@ -172,8 +174,8 @@ X_STATUS Runtime::Setup(uint32_t code_base, uint32_t code_size, uint32_t image_b
     int count = 0;
     for (int i = 0; func_mappings[i].guest != 0; ++i) {
       if (func_mappings[i].host != nullptr) {
-        processor_->SetFunction(static_cast<uint32_t>(func_mappings[i].guest),
-                                func_mappings[i].host);
+        function_dispatcher_->SetFunction(static_cast<uint32_t>(func_mappings[i].guest),
+                                          func_mappings[i].host);
         ++count;
       }
     }
@@ -208,7 +210,7 @@ void Runtime::Shutdown() {
     input_system_.reset();
   }
   kernel_state_.reset();
-  processor_.reset();
+  function_dispatcher_.reset();
   export_resolver_.reset();
   file_system_.reset();
   memory_.reset();

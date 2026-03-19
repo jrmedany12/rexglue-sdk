@@ -59,7 +59,7 @@ namespace stream {
 class ByteStream;
 }  // namespace stream
 namespace runtime {
-class Processor;
+class FunctionDispatcher;
 }  // namespace runtime
 }  // namespace rex
 
@@ -159,7 +159,7 @@ class KernelState {
 
   Runtime* emulator() const { return emulator_; }
   memory::Memory* memory() const { return memory_; }
-  runtime::Processor* processor() const { return processor_; }
+  runtime::FunctionDispatcher* function_dispatcher() const { return function_dispatcher_; }
   rex::filesystem::VirtualFileSystem* file_system() const { return file_system_; }
 
   uint32_t title_id() const;
@@ -287,7 +287,7 @@ class KernelState {
 
   Runtime* emulator_;
   memory::Memory* memory_;
-  runtime::Processor* processor_;
+  runtime::FunctionDispatcher* function_dispatcher_;
   rex::filesystem::VirtualFileSystem* file_system_;
 
   std::unique_ptr<xam::AppManager> app_manager_;

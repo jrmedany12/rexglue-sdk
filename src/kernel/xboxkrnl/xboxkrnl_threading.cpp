@@ -24,7 +24,7 @@
 #include <rex/ppc/function.h>
 #include <rex/ppc/types.h>
 #include <rex/system/kernel_state.h>
-#include <rex/system/processor.h>
+#include <rex/system/function_dispatcher.h>
 #include <rex/system/user_module.h>
 #include <rex/system/util/string_utils.h>
 #include <rex/system/xevent.h>
@@ -294,7 +294,7 @@ void KeSetCurrentStackPointers_entry(ppc_pvoid_t stack_ptr, ppc_ptr_t<X_KTHREAD>
 
   if (thread->fiber_ptr && current_thread->guest_object() == thread.guest_address()) {
     auto* ks = current_thread->kernel_state();
-    auto* processor = ks->processor();
+    auto* dispatcher = ks->function_dispatcher();
 
     uint32_t target_guest_addr = static_cast<uint32_t>(thread->fiber_ptr);
     rex::thread::Fiber* target = ks->LookupFiber(target_guest_addr);
@@ -304,7 +304,7 @@ void KeSetCurrentStackPointers_entry(ppc_pvoid_t stack_ptr, ppc_ptr_t<X_KTHREAD>
     // from a switch back to the main thread (saved LR = mid-function addr).
     uint32_t saved_lr = memory::load_and_swap<uint32_t>(
         kernel_memory()->TranslateVirtual(target_guest_addr) + 0x1C);
-    PPCFunc* start_fn = processor->GetFunction(saved_lr);
+    PPCFunc* start_fn = dispatcher->GetFunction(saved_lr);
 
     if (start_fn) {
       if (is_target_registered) {

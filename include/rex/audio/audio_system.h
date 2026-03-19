@@ -17,7 +17,7 @@
 #include <rex/kernel.h>
 #include <rex/memory.h>
 #include <rex/system/interfaces/audio.h>
-#include <rex/system/processor.h>
+#include <rex/system/function_dispatcher.h>
 #include <rex/system/xthread.h>
 #include <rex/thread.h>
 #include <rex/thread/mutex.h>
@@ -38,7 +38,7 @@ class AudioSystem : public system::IAudioSystem {
   virtual ~AudioSystem();
 
   memory::Memory* memory() const { return memory_; }
-  runtime::Processor* processor() const { return processor_; }
+  runtime::FunctionDispatcher* function_dispatcher() const { return function_dispatcher_; }
   XmaDecoder* xma_decoder() const { return xma_decoder_.get(); }
 
   virtual X_STATUS Setup(system::KernelState* kernel_state);
@@ -56,7 +56,7 @@ class AudioSystem : public system::IAudioSystem {
   void Resume();
 
  protected:
-  explicit AudioSystem(runtime::Processor* processor);
+  explicit AudioSystem(runtime::FunctionDispatcher* function_dispatcher);
 
   virtual void Initialize();
 
@@ -69,7 +69,7 @@ class AudioSystem : public system::IAudioSystem {
   static constexpr size_t kMaximumQueuedFrames = 64;
 
   memory::Memory* memory_ = nullptr;
-  runtime::Processor* processor_ = nullptr;
+  runtime::FunctionDispatcher* function_dispatcher_ = nullptr;
   std::unique_ptr<XmaDecoder> xma_decoder_;
   uint32_t queued_frames_;
 

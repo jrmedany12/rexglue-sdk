@@ -14,7 +14,7 @@
 #include <rex/runtime.h>
 #include <rex/system/kernel_module.h>
 #include <rex/system/kernel_state.h>
-#include <rex/system/processor.h>
+#include <rex/system/function_dispatcher.h>
 #include <rex/thread/mutex.h>
 
 namespace rex::system {
@@ -64,8 +64,8 @@ uint32_t KernelModule::GetProcAddressByOrdinal(uint16_t ordinal) {
   REXSYS_DEBUG("GetProcAddressByOrdinal: searching registry for '{}'", imp_name);
   PPCFunc* func = rex::FindPPCFuncByName(imp_name.c_str());
   if (func) {
-    auto* processor = emulator_->processor();
-    uint32_t thunk_addr = processor->AllocateThunk(func);
+    auto* dispatcher = emulator_->function_dispatcher();
+    uint32_t thunk_addr = dispatcher->AllocateThunk(func);
     if (thunk_addr) {
       thunk_cache_[ordinal] = thunk_addr;
       REXSYS_INFO("GetProcAddressByOrdinal: {} ({:04X}) in {} -> thunk at {:08X}",

@@ -17,7 +17,7 @@
 #include <rex/math.h>
 #include <rex/memory/ring_buffer.h>
 #include <rex/string/buffer.h>
-#include <rex/system/processor.h>
+#include <rex/system/function_dispatcher.h>
 #include <rex/system/thread_state.h>
 #include <rex/system/xthread.h>
 
@@ -53,8 +53,8 @@ REXCVAR_DEFINE_BOOL(ffmpeg_verbose, false, "Audio", "Verbose FFmpeg output (debu
 
 namespace rex::audio {
 
-XmaDecoder::XmaDecoder(runtime::Processor* processor)
-    : memory_(processor->memory()), processor_(processor) {}
+XmaDecoder::XmaDecoder(runtime::FunctionDispatcher* function_dispatcher)
+    : memory_(function_dispatcher->memory()), function_dispatcher_(function_dispatcher) {}
 
 XmaDecoder::~XmaDecoder() = default;
 

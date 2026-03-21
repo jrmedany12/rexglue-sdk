@@ -9,8 +9,12 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <bit>
+
 #include <rex/audio/xma/context.h>
 #include <rex/audio/xma/decoder.h>
+#include <rex/audio/xma/xma_context_legacy.h>
+#include <rex/audio/xma/xma_context_new.h>
 #include <rex/cvar.h>
 #include <rex/dbg.h>
 #include <rex/logging.h>
@@ -26,30 +30,20 @@ extern "C" {
 }  // extern "C"
 
 REXCVAR_DEFINE_BOOL(ffmpeg_verbose, false, "Audio", "Verbose FFmpeg output (debug and above)");
-
-// As with normal Microsoft, there are like twelve different ways to access
-// the audio APIs. Early games use XMA*() methods almost exclusively to touch
-// decoders. Later games use XAudio*() and direct memory writes to the XMA
-// structures (as opposed to the XMA* calls), meaning that we have to support
-// both.
-//
-// The XMA*() functions just manipulate the audio system in the guest context
-// and let the normal XmaDecoder handling take it, to prevent duplicate
-// implementations. They can be found in xboxkrnl_audio_xma.cc
-//
-// XMA details:
-// https://devel.nuclex.org/external/svn/directx/trunk/include/xma2defs.h
-// https://github.com/gdawg/fsbext/blob/master/src/xma_header.h
-//
-// XAudio2 uses XMA under the covers, and seems to map with the same
-// restrictions of frame/subframe/etc:
-// https://msdn.microsoft.com/en-us/library/windows/desktop/microsoft.directx_sdk.xaudio2.xaudio2_buffer(v=vs.85).aspx
-//
-// XMA contexts are 64b in size and tight bitfields. They are in physical
-// memory not usually available to games. Games will use MmMapIoSpace to get
-// the 64b pointer in user memory so they can party on it. If the game doesn't
-// do this, it's likely they are either passing the context to XAudio or
-// using the XMA* functions.
+// [XMA fix] Added use_dedicated_xma_thread cvar. When false, Work() runs inline
+// on the MMIO thread during a kick instead of being handed off to the worker
+// thread. This eliminates the deadlock where the game thread blocks in
+// WaitForWorkDone(), the worker waits on the context mutex, and the audio
+// callback thread waits for XMA work — all three stuck in a circle.
+REXCVAR_DEFINE_BOOL(use_dedicated_xma_thread, true, "Audio",
+                    "Run XMA decoding on a dedicated thread. When false, Work() runs on the MMIO "
+                    "thread during kick (Canary-style; can help ordering/priority issues).");
+// [XMA fix] Added xma_decoder cvar to let users switch between the old
+// frame-loop decoder (legacy) and the new Canary-ported subframe decoder (new).
+// The new decoder is the default. Set to "old" to restore the old behavior.
+REXCVAR_DEFINE_STRING(
+    xma_decoder, "new", "Audio",
+    "XMA decoder: \"new\" (default, Canary-style subframe path) or \"old\" (legacy frame loop).");
 
 namespace rex::audio {
 
@@ -86,35 +80,33 @@ void av_log_callback(void* avcl, int level, const char* fmt, va_list va) {
 }
 
 X_STATUS XmaDecoder::Setup(system::KernelState* kernel_state) {
-  // Setup ffmpeg logging callback
   av_log_set_callback(av_log_callback);
 
-  // Register APU/XMA MMIO handlers
-  // XMA registers are at 0x7FEA0000-0x7FEAFFFF
   memory()->AddVirtualMappedRange(
-      0x7FEA0000,  // base address
-      0xFFFF0000,  // mask
-      0x0000FFFF,  // size (64KB)
-      this,        // context (XmaDecoder*)
+      0x7FEA0000, 0xFFFF0000, 0x0000FFFF, this,
       reinterpret_cast<runtime::MMIOReadCallback>(MMIOReadRegisterThunk),
       reinterpret_cast<runtime::MMIOWriteCallback>(MMIOWriteRegisterThunk));
   REXAPU_DEBUG("XMA: Registered MMIO handlers at 0x7FEA0000-0x7FEAFFFF");
 
-  // Setup XMA context data.
-  // The Xbox 360 kernel allocates the contexts with X_PAGE_NOCACHE |
-  // X_PAGE_READWRITE and writes MmGetPhysicalAddress for the address to the
-  // register.
   context_data_first_ptr_ = memory()->SystemHeapAlloc(sizeof(XMA_CONTEXT_DATA) * kContextCount, 256,
                                                       memory::kSystemHeapPhysical);
   context_data_last_ptr_ = context_data_first_ptr_ + (sizeof(XMA_CONTEXT_DATA) * kContextCount - 1);
   register_file_[XmaRegister::ContextArrayAddress] =
       memory()->GetPhysicalAddress(context_data_first_ptr_);
 
-  // Setup XMA contexts.
+  // [XMA fix] At Setup() time, create either XmaContextLegacy or XmaContextNew
+  // for each slot depending on the xma_decoder cvar. Both are subclasses of
+  // XmaContext and work identically from the decoder's point of view.
+  const bool use_legacy = (REXCVAR_GET(xma_decoder) == "old");
   for (size_t i = 0; i < kContextCount; ++i) {
-    uint32_t guest_ptr = context_data_first_ptr_ + i * sizeof(XMA_CONTEXT_DATA);
-    XmaContext& context = contexts_[i];
-    if (context.Setup(i, memory(), guest_ptr)) {
+    if (use_legacy) {
+      contexts_[i] = std::make_unique<XmaContextLegacy>();
+    } else {
+      contexts_[i] = std::make_unique<XmaContextNew>();
+    }
+
+    uint32_t guest_ptr = context_data_first_ptr_ + static_cast<uint32_t>(i * sizeof(XMA_CONTEXT_DATA));
+    if (contexts_[i]->Setup(static_cast<uint32_t>(i), memory(), guest_ptr)) {
       assert_always();
     }
   }
@@ -126,7 +118,21 @@ X_STATUS XmaDecoder::Setup(system::KernelState* kernel_state) {
   assert_not_null(work_event_);
   worker_thread_ = system::object_ref<system::XHostThread>(
       new system::XHostThread(kernel_state, 128 * 1024, 0, [this]() {
-        WorkerThreadMain();
+        if (REXCVAR_GET(use_dedicated_xma_thread)) {
+          WorkerThreadMain();
+        } else {
+          // [XMA fix] When use_dedicated_xma_thread=false, Work() is called
+          // inline on the MMIO thread during kicks (see WriteRegister below).
+          // This thread still needs to exist so Pause()/Resume() can
+          // synchronize, but it doesn't run the decode loop.
+          while (worker_running_) {
+            if (paused_) {
+              pause_fence_.Signal();
+              resume_fence_.Wait();
+            }
+            rex::thread::Wait(work_event_.get(), false);
+          }
+        }
         return 0;
       }));
   worker_thread_->set_name("XMA Decoder");
@@ -138,10 +144,9 @@ X_STATUS XmaDecoder::Setup(system::KernelState* kernel_state) {
 
 void XmaDecoder::WorkerThreadMain() {
   while (worker_running_) {
-    // Okay, let's loop through XMA contexts to find ones we need to decode!
     bool did_work = false;
     for (uint32_t n = 0; n < kContextCount && worker_running_; n++) {
-      XmaContext& context = contexts_[n];
+      XmaContext& context = *contexts_[n];
       bool worked = context.Work();
       if (worked) {
         context.SignalWorkDone();
@@ -157,7 +162,6 @@ void XmaDecoder::WorkerThreadMain() {
     if (did_work) {
       continue;
     }
-    // No work done this iteration, block until signaled.
     rex::thread::Wait(work_event_.get(), false);
   }
 }
@@ -177,12 +181,15 @@ void XmaDecoder::Shutdown() {
     Resume();
   }
 
-  // Wait up to 2 seconds for worker thread to exit gracefully.
   auto result = rex::thread::Wait(worker_thread_->thread(), false, std::chrono::milliseconds(2000));
   if (result == rex::thread::WaitResult::kTimeout) {
     REXAPU_WARN("XMA: Worker thread did not exit within 2s, abandoning");
   }
   worker_thread_.reset();
+
+  for (auto& ctx : contexts_) {
+    ctx.reset();
+  }
 
   if (context_data_first_ptr_) {
     memory()->SystemHeapFree(context_data_first_ptr_);
@@ -198,17 +205,16 @@ int XmaDecoder::GetContextId(uint32_t guest_ptr) {
     return -1;
   }
   assert_zero(guest_ptr & 0x3F);
-  return (guest_ptr - context_data_first_ptr_) >> 6;
+  return static_cast<int>((guest_ptr - context_data_first_ptr_) >> 6);
 }
 
 uint32_t XmaDecoder::AllocateContext() {
   size_t index = context_bitmap_.Acquire();
-  if (index == -1) {
-    // Out of contexts.
+  if (index == static_cast<size_t>(-1)) {
     return 0;
   }
 
-  XmaContext& context = contexts_[index];
+  XmaContext& context = *contexts_[index];
   assert_false(context.is_allocated());
   context.set_is_allocated(true);
   return context.guest_ptr();
@@ -218,17 +224,17 @@ void XmaDecoder::ReleaseContext(uint32_t guest_ptr) {
   auto context_id = GetContextId(guest_ptr);
   assert_true(context_id >= 0);
 
-  XmaContext& context = contexts_[context_id];
+  XmaContext& context = *contexts_[context_id];
   assert_true(context.is_allocated());
   context.Release();
-  context_bitmap_.Release(context_id);
+  context_bitmap_.Release(static_cast<uint32_t>(context_id));
 }
 
 bool XmaDecoder::BlockOnContext(uint32_t guest_ptr, bool poll) {
   auto context_id = GetContextId(guest_ptr);
   assert_true(context_id >= 0);
 
-  XmaContext& context = contexts_[context_id];
+  XmaContext& context = *contexts_[context_id];
   return context.Block(poll);
 }
 
@@ -241,14 +247,8 @@ uint32_t XmaDecoder::ReadRegister(uint32_t addr) {
     case XmaRegister::ContextArrayAddress:
       break;
     case XmaRegister::CurrentContextIndex: {
-      // 0606h (1818h) is rotating context processing # set to hardware ID of
-      // context being processed.
-      // If bit 200h is set, the locking code will possibly collide on hardware
-      // IDs and error out, so we should never set it (I think?).
       uint32_t& current_context_index = register_file_[XmaRegister::CurrentContextIndex];
       uint32_t& next_context_index = register_file_[XmaRegister::NextContextIndex];
-      // To prevent games from seeing a stuck XMA context, return a rotating
-      // number.
       current_context_index = next_context_index;
       next_context_index = (next_context_index + 1) % kContextCount;
       break;
@@ -256,9 +256,9 @@ uint32_t XmaDecoder::ReadRegister(uint32_t addr) {
     default:
       const auto register_info = register_file_.GetRegisterInfo(r);
       if (register_info) {
-        REXAPU_DEBUG("XMA: Read from unhandled register ({:04X}, {})", r, register_info->name);
+        REXAPU_WARN("XMA: Read from unhandled register ({:04X}, {})", r, register_info->name);
       } else {
-        REXAPU_DEBUG("XMA: Read from unknown register ({:04X})", r);
+        REXAPU_WARN("XMA: Read from unknown register ({:04X})", r);
       }
       break;
   }
@@ -276,66 +276,66 @@ void XmaDecoder::WriteRegister(uint32_t addr, uint32_t value) {
   register_file_[r] = value;
 
   if (r >= XmaRegister::Context0Kick && r <= XmaRegister::Context9Kick) {
-    // Context kick command.
-    // This will kick off the given hardware contexts.
-    // Basically, this kicks the SPU and says "hey, decode that audio!"
-    // XMAEnableContext
-
-    // The context ID is a bit in the range of the entire context array.
-    uint32_t base_context_id = (r - XmaRegister::Context0Kick) * 32;
-    uint32_t kicked_value = value;
-    for (int i = 0; value && i < 32; ++i, value >>= 1) {
-      if (value & 1) {
-        uint32_t context_id = base_context_id + i;
-        auto& context = contexts_[context_id];
-        context.Enable();
+    const uint32_t base_context_id = (r - XmaRegister::Context0Kick) * 32;
+    const uint32_t kicked_value = value;
+    // [XMA fix] Changed from for(i=0; value&&i<32; i++, value>>=1) to
+    // while(value) + countr_zero(). countr_zero() finds the lowest set bit
+    // directly so we skip over zero bits instead of testing them one by one.
+    while (value) {
+      const uint32_t context_id = base_context_id + std::countr_zero(value);
+      auto& context = *contexts_[context_id];
+      context.Enable();
+      // [XMA fix] When use_dedicated_xma_thread=false, run Work() right here
+      // on the MMIO thread instead of handing it off to the worker. This is
+      // the deadlock fix — no cross-thread wait means nothing can circle-block.
+      if (!REXCVAR_GET(use_dedicated_xma_thread)) {
+        context.Work();
       }
+      value &= value - 1;  // clear lowest set bit
     }
-    // Signal the decoder thread to start processing.
-    work_event_->Set();
-    // Block until the worker finishes, so the game sees updated context data.
-    for (int i = 0; kicked_value && i < 32; ++i, kicked_value >>= 1) {
-      if (kicked_value & 1) {
-        uint32_t context_id = base_context_id + i;
-        contexts_[context_id].WaitForWorkDone();
+    // [XMA fix] SetBoostPriority() instead of Set() — gives the worker thread
+    // a brief scheduler boost on Windows to reduce audio wake-up latency.
+    work_event_->SetBoostPriority();
+    if (REXCVAR_GET(use_dedicated_xma_thread)) {
+      // Only wait for work done when the dedicated thread is doing the decode.
+      // In inline mode the work is already finished by this point.
+      uint32_t remaining = kicked_value;
+      while (remaining) {
+        const uint32_t context_id = base_context_id + std::countr_zero(remaining);
+        contexts_[context_id]->WaitForWorkDone();
+        remaining &= remaining - 1;
       }
     }
   } else if (r >= XmaRegister::Context0Lock && r <= XmaRegister::Context9Lock) {
-    // Context lock command.
-    // This requests a lock by flagging the context.
-    // XMADisableContext
-    uint32_t base_context_id = (r - XmaRegister::Context0Lock) * 32;
-    for (int i = 0; value && i < 32; ++i, value >>= 1) {
-      if (value & 1) {
-        uint32_t context_id = base_context_id + i;
-        auto& context = contexts_[context_id];
-        context.Disable();
-      }
+    const uint32_t base_context_id = (r - XmaRegister::Context0Lock) * 32;
+    while (value) {
+      const uint32_t context_id = base_context_id + std::countr_zero(value);
+      auto& context = *contexts_[context_id];
+      context.Disable();
+      // [XMA fix] Added Block(false) after Disable(). Without this, the game
+      // could call XMADisableContext and start modifying the context struct
+      // while a decode was still in progress on the worker thread. Block()
+      // waits for the context mutex to be free (poll=false means wait, not spin).
+      context.Block(false);
+      value &= value - 1;
     }
-    // Signal the decoder thread to start processing.
-    // work_event_->Set();
   } else if (r >= XmaRegister::Context0Clear && r <= XmaRegister::Context9Clear) {
-    // Context clear command.
-    // This will reset the given hardware contexts.
-    uint32_t base_context_id = (r - XmaRegister::Context0Clear) * 32;
-    for (int i = 0; value && i < 32; ++i, value >>= 1) {
-      if (value & 1) {
-        uint32_t context_id = base_context_id + i;
-        XmaContext& context = contexts_[context_id];
-        context.Clear();
-      }
+    const uint32_t base_context_id = (r - XmaRegister::Context0Clear) * 32;
+    while (value) {
+      const uint32_t context_id = base_context_id + std::countr_zero(value);
+      XmaContext& context = *contexts_[context_id];
+      context.Clear();
+      value &= value - 1;
     }
   } else {
-    // 0601h (1804h) is written to with 0x02000000 and 0x03000000 around a lock
-    // operation
     switch (r) {
       default: {
         const auto register_info = register_file_.GetRegisterInfo(r);
         if (register_info) {
-          REXAPU_DEBUG("XMA: Write to unhandled register ({:04X}, {}): {:08X}", r,
-                       register_info->name, value);
+          REXAPU_WARN("XMA: Write to unhandled register ({:04X}, {}): {:08X}", r,
+                      register_info->name, value);
         } else {
-          REXAPU_DEBUG("XMA: Write to unknown register ({:04X}): {:08X}", r, value);
+          REXAPU_WARN("XMA: Write to unknown register ({:04X}): {:08X}", r, value);
         }
         break;
       }
@@ -350,6 +350,9 @@ void XmaDecoder::Pause() {
   }
   paused_ = true;
 
+  if (work_event_) {
+    work_event_->Set();
+  }
   pause_fence_.Wait();
 }
 

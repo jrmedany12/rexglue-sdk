@@ -35,6 +35,7 @@
 #include <rex/system/xthread.h>
 #include <rex/ui/graphics_provider.h>
 #include <rex/ui/keybinds.h>
+#include <rex/version.h>
 
 #include <imgui.h>
 
@@ -177,6 +178,10 @@ bool ReXApp::OnInitialize() {
     REXLOG_ERROR("Failed to create window");
     return false;
   }
+
+  // Set window title with SDK build stamp
+  std::string title = std::string(GetName()) + " " + REXGLUE_BUILD_TITLE;
+  window_->SetTitle(title);
 
   window_->AddListener(this);
   window_->AddInputListener(this, 0);

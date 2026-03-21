@@ -3,16 +3,9 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(ReXGlue
-    VERSION 0.7.0
+    VERSION 0.7.1
     LANGUAGES C CXX
     DESCRIPTION "Xbox 360 Recompilation SDK"
-)
-
-# Generate version header from CMake project version
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/rex/version.h.in
-    ${CMAKE_CURRENT_BINARY_DIR}/include/rex/version.h
-    @ONLY
 )
 
 #==========================================================
@@ -128,6 +121,18 @@ elseif(UNIX AND NOT APPLE)
 else()
     message(FATAL_ERROR "Unsupported platform. ReXGlue supports Windows and Linux only.")
 endif()
+
+# Build config as compile definition (multi-config generators don't know config at configure time)
+add_compile_definitions(REXGLUE_BUILD_CONFIG="$<CONFIG>")
+
+# Generate version header -- must run after REX_PLATFORM is set
+# Timestamp is set at configure time -- intentionally not updated on every rebuild
+string(TIMESTAMP REXGLUE_BUILD_TIMESTAMP "%Y%m%d_%H%M")
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/rex/version.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/rex/version.h
+    @ONLY
+)
 
 # Output directories (multi-config appends /<Config>/ automatically)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${REXGLUE_ROOT}/out/${REX_PLATFORM}")

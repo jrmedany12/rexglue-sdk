@@ -11,6 +11,7 @@
  */
 #include <rex/ui/overlay/debug_overlay.h>
 #include <rex/ui/keybinds.h>
+#include <rex/version.h>
 #include <imgui.h>
 
 namespace rex::ui {
@@ -41,6 +42,23 @@ void DebugOverlayDialog::OnDraw(ImGuiIO& io) {
     }
   }
   ImGui::End();
+
+  // Build stamp watermark -- centered near bottom of screen
+  auto text_size = ImGui::CalcTextSize(REXGLUE_BUILD_STAMP);
+  float padding = ImGui::GetStyle().WindowPadding.x * 2.0f;
+  float bottom_offset = io.DisplaySize.y * 0.03f;
+  ImGui::SetNextWindowPos(ImVec2((io.DisplaySize.x - text_size.x - padding) * 0.5f,
+                                 io.DisplaySize.y - text_size.y - bottom_offset));
+  ImGui::SetNextWindowSize(ImVec2(0, 0));
+  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+  if (ImGui::Begin("##watermark", nullptr,
+                   ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
+                       ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::TextUnformatted(REXGLUE_BUILD_STAMP);
+  }
+  ImGui::End();
+  ImGui::PopStyleColor();
 }
 
 }  // namespace rex::ui

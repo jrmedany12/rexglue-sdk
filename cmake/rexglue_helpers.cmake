@@ -24,6 +24,10 @@ function(rexglue_configure_target target_name)
     target_sources(${target_name} PRIVATE
         ${REXGLUE_SHARE_DIR}/rex_app.cpp)
 
+    # Build config for version stamp (rex_app.cpp uses REXGLUE_BUILD_STAMP)
+    target_compile_definitions(${target_name} PRIVATE
+        REXGLUE_BUILD_CONFIG="$<CONFIG>")
+
     # Linux platform settings
     if(UNIX AND NOT APPLE)
         find_package(PkgConfig REQUIRED)

@@ -236,7 +236,7 @@ uint32_t GraphicsSystem::ReadRegister(uint32_t addr) {
     }
     default:
       if (!register_file_.GetRegisterInfo(r)) {
-        REXGPU_ERROR("GPU: Read from unknown register ({:04X})", r);
+        REXGPU_DEBUG("GPU: Read from unknown register ({:04X})", r);
       }
   }
 

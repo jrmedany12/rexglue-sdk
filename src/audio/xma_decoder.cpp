@@ -256,9 +256,9 @@ uint32_t XmaDecoder::ReadRegister(uint32_t addr) {
     default:
       const auto register_info = register_file_.GetRegisterInfo(r);
       if (register_info) {
-        REXAPU_WARN("XMA: Read from unhandled register ({:04X}, {})", r, register_info->name);
+        REXAPU_DEBUG("XMA: Read from unhandled register ({:04X}, {})", r, register_info->name);
       } else {
-        REXAPU_WARN("XMA: Read from unknown register ({:04X})", r);
+        REXAPU_DEBUG("XMA: Read from unknown register ({:04X})", r);
       }
       break;
   }
@@ -332,10 +332,10 @@ void XmaDecoder::WriteRegister(uint32_t addr, uint32_t value) {
       default: {
         const auto register_info = register_file_.GetRegisterInfo(r);
         if (register_info) {
-          REXAPU_WARN("XMA: Write to unhandled register ({:04X}, {}): {:08X}", r,
-                      register_info->name, value);
+          REXAPU_DEBUG("XMA: Write to unhandled register ({:04X}, {}): {:08X}", r,
+                       register_info->name, value);
         } else {
-          REXAPU_WARN("XMA: Write to unknown register ({:04X}): {:08X}", r, value);
+          REXAPU_DEBUG("XMA: Write to unknown register ({:04X}): {:08X}", r, value);
         }
         break;
       }

@@ -283,6 +283,13 @@ class Event : public WaitHandle {
   // the nonsignaled state after releasing the appropriate number of waiting
   // threads.
   virtual void Pulse() = 0;
+
+  // [XMA fix] Added SetBoostPriority() so the XMA decoder can wake the worker
+  // thread with a scheduler priority boost instead of a plain signal.
+  // On Windows this calls NtSetEventBoostPriority which briefly raises the
+  // woken thread's priority, reducing audio latency. On all other platforms
+  // it just falls back to Set() since there's no equivalent API.
+  virtual void SetBoostPriority() { Set(); }
 };
 
 // Models a Win32-like semaphore object.

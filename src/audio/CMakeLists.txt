@@ -6,6 +6,8 @@ add_library(rexaudio STATIC
     audio_driver.cpp
     audio_system.cpp
     xma_context.cpp
+    xma_context_legacy.cpp
+    xma_context_new.cpp
     xma_decoder.cpp
     xma_register_file.cpp
     # NOP backend (always available)

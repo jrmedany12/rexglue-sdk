@@ -4841,6 +4841,7 @@ void VulkanCommandProcessor::DisableHostOcclusionQueries() {
 }
 
 bool VulkanCommandProcessor::BeginGuestOcclusionQuery(uint32_t sample_count_address) {
+  return false;
   if (!REXCVAR_GET(occlusion_query_enable) || !occlusion_query_resources_available_ ||
       occlusion_query_pool_ == VK_NULL_HANDLE || occlusion_query_readback_mapping_ == nullptr) {
     return false;
@@ -4860,14 +4861,14 @@ bool VulkanCommandProcessor::BeginGuestOcclusionQuery(uint32_t sample_count_addr
     return false;
   }
 
-  EndRenderPass();
-
   DeferredCommandBuffer& command_buffer = deferred_command_buffer();
   command_buffer.CmdVkResetQueryPool(occlusion_query_pool_, host_index, 1);
   command_buffer.CmdVkBeginQuery(occlusion_query_pool_, host_index, 0);
   active_occlusion_query_.sample_count_address = sample_count_address;
   active_occlusion_query_.host_index = host_index;
   active_occlusion_query_.valid = true;
+
+  EndRenderPass();
   return true;
 }
 
@@ -4885,14 +4886,14 @@ bool VulkanCommandProcessor::EndGuestOcclusionQuery(uint32_t sample_count_addres
     return false;
   }
 
-  EndRenderPass();
-
   DeferredCommandBuffer& command_buffer = deferred_command_buffer();
   command_buffer.CmdVkEndQuery(occlusion_query_pool_, host_index);
   command_buffer.CmdVkCopyQueryPoolResults(occlusion_query_pool_, host_index, 1,
                                            occlusion_query_readback_buffer_,
                                            sizeof(uint64_t) * host_index, sizeof(uint64_t),
                                            VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+
+  EndRenderPass();
 
   if (!EndSubmission(false)) {
     return false;

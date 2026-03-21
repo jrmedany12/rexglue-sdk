@@ -12,6 +12,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <queue>
 
@@ -82,7 +83,11 @@ class XmaDecoder {
   XmaRegisterFile register_file_;
 
   static const uint32_t kContextCount = 320;
-  XmaContext contexts_[kContextCount];
+  // [XMA fix] Changed from a fixed array of the base class (XmaContext contexts_[320])
+  // to an array of unique_ptr. A fixed array can't store subclass instances
+  // since XmaContextLegacy and XmaContextNew are different sizes. The pointer
+  // array lets Setup() place whichever subclass is selected into each slot.
+  std::unique_ptr<XmaContext> contexts_[kContextCount];
   bit::BitMap context_bitmap_;
 
   uint32_t context_data_first_ptr_ = 0;

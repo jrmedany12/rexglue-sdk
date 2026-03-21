@@ -283,6 +283,10 @@ class Event : public WaitHandle {
   // the nonsignaled state after releasing the appropriate number of waiting
   // threads.
   virtual void Pulse() = 0;
+
+  // Prefer waking a waiter with scheduler boost when supported (e.g. Windows);
+  // default matches Set().
+  virtual void SetBoostPriority() { Set(); }
 };
 
 // Models a Win32-like semaphore object.

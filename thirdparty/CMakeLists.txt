@@ -1,6 +1,19 @@
 # Third-party vendored dependencies for ReXGlue
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+#=============================================================================
+# Architecture detection (for per-arch FFmpeg sources, etc.)
+#=============================================================================
+set(IS_X86_64 FALSE)
+set(IS_ARM64 FALSE)
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" REX_TP_SYSTEM_PROCESSOR_LOWER)
+if(REX_TP_SYSTEM_PROCESSOR_LOWER MATCHES "amd64|x86_64")
+    set(IS_X86_64 TRUE)
+elseif(REX_TP_SYSTEM_PROCESSOR_LOWER MATCHES "aarch64|arm64")
+    set(IS_ARM64 TRUE)
+endif()
+
 #=============================================================================
 # Verify git submodules are initialized (only vendored ones)
 #=============================================================================
@@ -535,8 +548,25 @@ add_library(libavcodec STATIC
     ${FFMPEG_DIR}/libavcodec/sinewin.c
     ${FFMPEG_DIR}/libavcodec/wma_freqs.c
     ${FFMPEG_DIR}/libavcodec/wmaprodec.c
+    ${FFMPEG_DIR}/libavcodec/wmadec.c
     ${FFMPEG_DIR}/libavcodec/wma.c
     ${FFMPEG_DIR}/libavcodec/wma_common.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudio.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudiodata.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudiodecheader.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudiodec_common.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudiodec_float.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudiodec_fixed.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudiodsp.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudiodsp_data.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudiodsp_float.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudiodsp_fixed.c
+    ${FFMPEG_DIR}/libavcodec/mpegaudio_parser.c
+    ${FFMPEG_DIR}/libavcodec/dct.c
+    ${FFMPEG_DIR}/libavcodec/dct32_float.c
+    ${FFMPEG_DIR}/libavcodec/dct32_fixed.c
+    ${FFMPEG_DIR}/libavcodec/rdft.c
+    ${FFMPEG_DIR}/libavcodec/aactab.c
     ${FFMPEG_DIR}/libavcodec/null_bsf.c
     ${FFMPEG_DIR}/libavcodec/pthread.c
     ${FFMPEG_DIR}/libavcodec/pthread_slice.c
@@ -554,16 +584,39 @@ if(WIN32)
     )
 endif()
 
-# Add x86 optimizations on Windows/Linux
-if(WIN32 OR (UNIX AND NOT APPLE))
+# Add x86 optimizations 
+if(IS_X86_64)
     target_sources(libavcodec PRIVATE
         ${FFMPEG_DIR}/libavcodec/x86/constants.c
         ${FFMPEG_DIR}/libavcodec/x86/fdctdsp_init.c
         ${FFMPEG_DIR}/libavcodec/x86/fft_init.c
         ${FFMPEG_DIR}/libavcodec/x86/idctdsp_init.c
         ${FFMPEG_DIR}/libavcodec/x86/fdct.c
+        ${FFMPEG_DIR}/libavcodec/x86/mpegaudiodsp.c
+        ${FFMPEG_DIR}/libavcodec/x86/dct_init.c
     )
 endif()
+
+# ARM64 optimizations for libavcodec
+if(IS_ARM64)
+    target_sources(libavcodec PRIVATE
+        ${FFMPEG_DIR}/libavcodec/aarch64/fft_init_aarch64.c
+        ${FFMPEG_DIR}/libavcodec/aarch64/fft_neon.S
+        ${FFMPEG_DIR}/libavcodec/aarch64/mdct_neon.S
+        ${FFMPEG_DIR}/libavcodec/aarch64/simple_idct_neon.S
+        ${FFMPEG_DIR}/libavcodec/aarch64/videodsp.S
+        ${FFMPEG_DIR}/libavcodec/aarch64/neon.S
+        ${FFMPEG_DIR}/libavcodec/aarch64/mpegaudiodsp_init.c
+        ${FFMPEG_DIR}/libavcodec/aarch64/mpegaudiodsp_neon.S
+    )
+    target_compile_definitions(libavcodec PRIVATE
+        HAVE_NEON=1
+        HAVE_ARMV8=1
+        HAVE_INLINE_ASM=1
+    )
+endif()
+
+target_include_directories(libavcodec BEFORE PRIVATE "${FFMPEG_OVERLAY_BUILD_DIR}")
 
 target_include_directories(libavcodec
     PUBLIC
@@ -579,4 +632,3 @@ if(WIN32)
 endif()
 
 # IDE folder organization
-set_target_properties(libavutil libavcodec PROPERTIES FOLDER "FFmpeg")
